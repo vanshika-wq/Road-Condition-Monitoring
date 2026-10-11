@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+
+# Ultralytics training outputs
+runs/
+
+# Large model files
+*.pt
+*.onnx
+
+# Python environments
+venv/
+.venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# VS Code
+.vscode/
+freqmamba_rdd/*_backup.py

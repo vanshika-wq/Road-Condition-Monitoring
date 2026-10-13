@@ -13,55 +13,48 @@ class StateSpaceBlock(nn.Module):
         self.output_proj = nn.Linear(channels, channels)
 
         self.conv = nn.Conv1d(
-            channels,
-            channels,
-            kernel_size=3,
-            padding=1,
-            groups=channels
+            channels, channels, kernel_size=3, padding=1, groups=channels
         )
 
-    def forward(self, x, geometry_embedding=None):
+    def forward(self, x, geometry=None):
         residual = x
         b, c, h, w = x.shape
+
+        if geometry is None:
+            geometry = torch.zeros_like(x)
+        elif geometry.shape[-2:] != (h, w):
+            geometry = torch.nn.functional.interpolate(
+                geometry, size=(h, w), mode="bilinear", align_corners=False
+            )
+
+        geometry = self.geometry_proj(geometry)
+        x = x + geometry
 
         sequence = x.flatten(2).transpose(1, 2)
         sequence = self.norm(sequence)
 
         values, gate = self.input_proj(sequence).chunk(2, dim=-1)
         values = self.state_proj(values)
-
-        if geometry_embedding is not None:
-            geometry = self.geometry_proj(geometry_embedding)
-            geometry = geometry.flatten(2).transpose(1, 2)
-            gate = gate + geometry
-
         values = self.conv(values.transpose(1, 2)).transpose(1, 2)
         values = values * torch.sigmoid(gate)
         values = self.output_proj(values)
 
         output = values.transpose(1, 2).reshape(b, c, h, w)
-
         return output + residual
 
 
 if __name__ == "__main__":
     torch.manual_seed(42)
+    x = torch.randn(2, 32, 16, 16, requires_grad=True)
+    geometry = torch.randn(2, 32, 16, 16, requires_grad=True)
+    model = StateSpaceBlock(32)
 
-    x = torch.randn(2, 32, 64, 64, requires_grad=True)
-    embedding = torch.randn(2, 32, 64, 64)
-
-    model = StateSpaceBlock(channels=32)
-    y = model(x, embedding)
+    y = model(x, geometry)
     y.mean().backward()
 
-    print("Input shape:", tuple(x.shape))
+    print("Input shape :", tuple(x.shape))
     print("Output shape:", tuple(y.shape))
     print("Output finite:", torch.isfinite(y).all().item())
-    print("Input gradients finite:", x.grad is not None and torch.isfinite(x.grad).all().item())
-    print(
-        "Parameter gradients finite:",
-        all(
-            p.grad is not None and torch.isfinite(p.grad).all().item()
-            for p in model.parameters()
-        )
-    )
+    print("Input gradient finite:", x.grad is not None and torch.isfinite(x.grad).all().item())
+    print("Geometry gradient finite:", geometry.grad is not None and torch.isfinite(geometry.grad).all().item())
+    print("Parameter gradients:", all(p.grad is not None and torch.isfinite(p.grad).all().item() for p in model.parameters()))
